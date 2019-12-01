@@ -380,7 +380,7 @@ func (mb *client) Read(variable string) (value interface{}, err error) {
 		return
 	}
 	//var area, dbNumber, start, amount, wordLen int
-	var buffer []byte
+	buffer := make([]byte, 12) // DTL
 	switch valueArea := variable[0:2]; valueArea {
 	case "EB": //input byte
 	case "EW": //input word
@@ -397,8 +397,14 @@ func (mb *client) Read(variable string) (value interface{}, err error) {
 			err = fmt.Errorf("Db Area read variable should not be empty")
 			return
 		}
-		dbNo, _ := strconv.ParseInt(string(string(dbArray[0])[2:]), 10, 16)
-		dbIndex, _ := strconv.ParseInt(string(string(dbArray[1])[3:]), 10, 16)
+
+		if len(dbArray[0]) < 2 || len(dbArray[1]) < 3 {
+			err = fmt.Errorf("invalid variable " + variable)
+			return
+		}
+
+		dbNo, _ := strconv.ParseInt(string(dbArray[0])[2:], 10, 16)
+		dbIndex, _ := strconv.ParseInt(string(dbArray[1])[3:], 10, 16)
 		dbType := string(dbArray[1])[0:3]
 
 		switch dbType {
@@ -421,8 +427,8 @@ func (mb *client) Read(variable string) (value interface{}, err error) {
 				return
 			}
 			err = mb.AGReadDB(int(dbNo), int(dbIndex), 1, buffer)
-			mask := []byte{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
-			value = buffer[0] & mask[mBit]
+			helper := Helper{}
+			value = helper.GetBoolAt(buffer[0], uint(mBit))
 			return
 		default:
 			err = fmt.Errorf("error when parsing dbtype")
@@ -430,11 +436,81 @@ func (mb *client) Read(variable string) (value interface{}, err error) {
 		}
 	default:
 		switch otherArea := variable[0:1]; otherArea {
-		case "E":
-		case "I": //input
-		case "A":
-		case "0": //output
+		case "E", "I": //input
+			varArray := strings.Split(variable, ".")
+			if len(varArray) < 2 {
+				err = fmt.Errorf("invalid variable " + variable)
+				return
+			}
+
+			if len(varArray[0]) < 1 || len(varArray[1]) < 1 {
+				err = fmt.Errorf("invalid variable " + variable)
+				return
+			}
+
+			startByte, _ := strconv.ParseInt(string(string(varArray[0])[1:]), 10, 16)
+			err = mb.AGReadEB(int(startByte), 1, buffer)
+			if err != nil {
+				return
+			}
+			mBit, _ := strconv.ParseInt(varArray[1], 10, 16)
+			if mBit > 7 || mBit < 0 {
+				err = fmt.Errorf("read bit is invalid")
+				return
+			}
+			helper := Helper{}
+			value = helper.GetBoolAt(buffer[0], uint(mBit))
+			return
+		case "A", "O": //output
+			varArray := strings.Split(variable, ".")
+			if len(varArray) < 2 {
+				err = fmt.Errorf("invalid variable " + variable)
+				return
+			}
+
+			if len(varArray[0]) < 1 || len(varArray[1]) < 1 {
+				err = fmt.Errorf("invalid variable " + variable)
+				return
+			}
+
+			startByte, _ := strconv.ParseInt(string(string(varArray[0])[1:]), 10, 16)
+			err = mb.AGReadAB(int(startByte), 1, buffer)
+			if err != nil {
+				return
+			}
+			mBit, _ := strconv.ParseInt(varArray[1], 10, 16)
+			if mBit > 7 || mBit < 0 {
+				err = fmt.Errorf("read bit is invalid")
+				return
+			}
+			helper := Helper{}
+			value = helper.GetBoolAt(buffer[0], uint(mBit))
+			return
 		case "M": //memory
+			varArray := strings.Split(variable, ".")
+			if len(varArray) < 2 {
+				err = fmt.Errorf("invalid variable " + variable)
+				return
+			}
+
+			if len(varArray[0]) < 1 || len(varArray[1]) < 1 {
+				err = fmt.Errorf("invalid variable " + variable)
+				return
+			}
+
+			startByte, _ := strconv.ParseInt(string(string(varArray[0])[1:]), 10, 16)
+			err = mb.AGReadMB(int(startByte), 1, buffer)
+			if err != nil {
+				return
+			}
+			mBit, _ := strconv.ParseInt(varArray[1], 10, 16)
+			if mBit > 7 || mBit < 0 {
+				err = fmt.Errorf("read bit is invalid")
+				return
+			}
+			helper := Helper{}
+			value = helper.GetBoolAt(buffer[0], uint(mBit))
+			return
 		case "T": //timer
 			startByte, _ := strconv.ParseInt(string(variable[1:]), 10, 16)
 			err = mb.AGReadTM(int(startByte), 1, buffer)
@@ -444,8 +520,7 @@ func (mb *client) Read(variable string) (value interface{}, err error) {
 			helper := Helper{}
 			helper.GetValueAt(buffer, 0, value)
 			return
-		case "Z":
-		case "C": //counter
+		case "Z", "C": //counter
 			startByte, _ := strconv.ParseInt(string(variable[1:]), 10, 16)
 			err = mb.AGReadCT(int(startByte), 1, buffer)
 			if err != nil {
